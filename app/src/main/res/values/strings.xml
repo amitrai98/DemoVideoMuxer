@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">DemoVideoMuxer</string>
+    <string name="start">Start Muxing</string>
+    <string name="aduiofile">Audio File Path</string>
+    <string name="videofile">Vido Path</string>
+
+</resources>
