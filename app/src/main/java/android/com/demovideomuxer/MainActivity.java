@@ -1,14 +1,18 @@
 package android.com.demovideomuxer;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.com.demovideomuxer.apputil.Utility;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.AssetFileDescriptor;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
@@ -35,6 +39,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private File ImageFilePath;
     private int REQUEST_VIDEO = 102;
     private String filemanagerstring = null;
+    private ProgressDialog pd = null;
 
 
     @Override
@@ -55,6 +60,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         btnStart = (Button) findViewById(R.id.btn_start);
         txtAudio = (TextView) findViewById(R.id.txt_audiofile);
         txtVideo = (TextView) findViewById(R.id.txt_videopath);
+        pd = new ProgressDialog(this);
+        pd.setTitle("please wait");
+        pd.setMessage("Muxing is in progress");
 
         btnStart.setOnClickListener(this);
     }
@@ -63,7 +71,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void onClick(View v) {
         switch (v.getId()){
             case R.id.btn_start:
-                prePareForMuxing();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if(Utility.getRuntimePermission(MainActivity.this,
+                            new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
+                                    Manifest.permission.WRITE_EXTERNAL_STORAGE})){
+                        prePareForMuxing();
+                    }
+                }else
+                    prePareForMuxing();
                 break;
         }
     }
@@ -79,7 +94,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             intent.setAction(Intent.ACTION_GET_CONTENT);
             startActivityForResult(Intent.createChooser(intent,"Select Audio "), REQUEST_AUDIO);
         }else {
-            muxing(selectedAudioPath);
+            if(pd != null && !pd.isShowing())
+             pd.show();
+
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    muxing(selectedAudioPath);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if(pd != null && pd.isShowing())
+                                pd.dismiss();
+
+                        }
+                    });
+                }
+            }).start();
+
         }
     }
 
@@ -88,6 +120,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
      * @param audioFilePath
      */
     private void muxing(String audioFilePath) {
+
+
 
         String outputFile = "";
 
@@ -164,10 +198,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 }
             }
 
-            Toast.makeText(getApplicationContext() , "frame:" + frameCount , Toast.LENGTH_SHORT).show();
-
-
-
             boolean sawEOS2 = false;
             int frameCount2 =0;
             while (!sawEOS2)
@@ -197,9 +227,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 }
             }
 
-            Toast.makeText(getApplicationContext() , "frame:" + frameCount2 , Toast.LENGTH_SHORT).show();
-
-
             muxer.stop();
             muxer.release();
 
@@ -210,43 +237,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             Log.d(TAG, "Mixer Error 2 " + e.getMessage());
         }
     }
-
-
-
-//    private void startMuxing(){
-//        MediaMuxer muxer = null;
-//        final int MAX_SAMPLE_SIZE = 256 * 1024;
-//        try {
-//            muxer = new MediaMuxer("temp.mp4", MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-//            // More often, the MediaFormat will be retrieved from MediaCodec.getOutputFormat()
-//            // or MediaExtractor.getTrackFormat().
-//            MediaFormat audioFormat = new MediaFormat();
-//            MediaFormat videoFormat = new MediaFormat();
-//            int audioTrackIndex = muxer.addTrack(audioFormat);
-//            int videoTrackIndex = muxer.addTrack(videoFormat);
-//            ByteBuffer inputBuffer = ByteBuffer.allocate(MAX_SAMPLE_SIZE);
-//            boolean finished = false;
-//            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-//
-//            muxer.start();
-//            while(!finished) {
-//                // getInputBuffer() will fill the inputBuffer with one frame of encoded
-//                // sample from either MediaCodec or MediaExtractor, set isAudioSample to
-//                // true when the sample is audio data, set up all the fields of bufferInfo,
-//                // and return true if there are no more samples.
-//                finished = getInputBuffer(inputBuffer, isAudioSample, bufferInfo);
-//                if (!finished) {
-//                    int currentTrackIndex = isAudioSample ? audioTrackIndex : videoTrackIndex;
-//                    muxer.writeSampleData(currentTrackIndex, inputBuffer, bufferInfo);
-//                }
-//            };
-//            muxer.stop();
-//            muxer.release();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//
-//    }
 
 
     @Override
@@ -263,7 +253,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 selectedAudioPath = Utility.getPath(this,selectedImageUri);
                 txtAudio.setText(selectedAudioPath);
                 if(selectedAudioPath != null)
-                    muxing(selectedAudioPath);
+                    prePareForMuxing();
 //                    selectVideo();
 
             }if (requestCode == REQUEST_VIDEO) {
@@ -319,6 +309,34 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
 
         return true;
+    }
+
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case Utility.MY_PERMISSIONS_REQUEST: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                    // permission was granted, yay! Do the
+                    // contacts-related task you need to do.
+                        prePareForMuxing();
+                } else {
+
+                    Toast.makeText(this,"permission denied ",Toast.LENGTH_LONG).show();
+
+                    // permission denied, boo! Disable the
+                    // functionality that depends on this permission.
+                }
+                return;
+            }
+
+            // other 'case' lines to check for other
+            // permissions this app might request
+        }
     }
 }
 
